@@ -1,0 +1,13 @@
+{
+  "name": "switcheon-api-sample",
+  "version": "1.0.0",
+  "description": "Sample SwitcheOn API client for Node.js",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@microsoft/signalr": "^10.0.11"
+  }
+}
