@@ -114,11 +114,6 @@ public sealed class SwitcheOnClient : IDisposable
         var query = $"UserIdBin={Uri.EscapeDataString(RequireUser())}" +
                     $"&UserSecret={Uri.EscapeDataString(await SecretAsync(cancellationToken))}";
         using var res = await http.GetAsync($"{BaseUrl}/api/User?{query}", cancellationToken);
-        // A rejected token comes back as 404, not 401
-        if (res.StatusCode == HttpStatusCode.NotFound)
-        {
-            throw new SwitcheOnException("The account was not found or the token was rejected", res.StatusCode);
-        }
         await EnsureSuccess(res, "GET /api/User");
         return await res.Content.ReadFromJsonAsync<SwitcheOnUser>(Json, cancellationToken)
             ?? throw new SwitcheOnException("GET /api/User returned an empty response");
@@ -257,10 +252,28 @@ public sealed class SwitcheOnClient : IDisposable
         return await res.Content.ReadAsStringAsync(cancellationToken);
     }
 
-    private static Task EnsureSuccess(HttpResponseMessage res, string what) =>
-        res.IsSuccessStatusCode
-            ? Task.CompletedTask
-            : throw new SwitcheOnException($"{what} failed with HTTP {(int)res.StatusCode}", res.StatusCode);
+    private static async Task EnsureSuccess(HttpResponseMessage res, string what)
+    {
+        if (res.IsSuccessStatusCode)
+        {
+            return;
+        }
+
+        // Failures carry problem details, whose "detail" says what went wrong
+        string? detail = null;
+        try
+        {
+            using var problem = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+            if (problem.RootElement.TryGetProperty("detail", out var value))
+            {
+                detail = value.GetString();
+            }
+        }
+        catch (JsonException)
+        {
+        }
+        throw new SwitcheOnException($"{what} failed with HTTP {(int)res.StatusCode}{(detail is null ? "" : ": " + detail)}", res.StatusCode);
+    }
 
     // The token is "jwt:" followed by a standard JWT. Only the expiry is read here;
     // the server is what checks the signature.

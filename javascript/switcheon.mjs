@@ -80,7 +80,7 @@ export class SwitcheOnClient {
       throw new SwitcheOnError("The email or password was not accepted", 401);
     }
     if (!res.ok) {
-      throw new SwitcheOnError(`Login failed with HTTP ${res.status}`, res.status);
+      throw await failure("Login", res);
     }
 
     const body = await res.json();
@@ -95,12 +95,8 @@ export class SwitcheOnClient {
   async getUser() {
     const params = new URLSearchParams({ UserIdBin: this.#requireUser(), UserSecret: await this.#secret() });
     const res = await fetch(`${this.baseUrl}/api/User?${params}`);
-    // A rejected token comes back as 404, not 401
-    if (res.status === 404) {
-      throw new SwitcheOnError("The account was not found or the token was rejected", 404);
-    }
     if (!res.ok) {
-      throw new SwitcheOnError(`GET /api/User failed with HTTP ${res.status}`, res.status);
+      throw await failure("GET /api/User", res);
     }
     return parseKeepingIccid(await res.text());
   }
@@ -201,12 +197,22 @@ export class SwitcheOnClient {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userIdBin: this.#requireUser(), userSecret: await this.#secret(), ...fields }),
     });
-    const text = await res.text();
     if (!res.ok) {
-      throw new SwitcheOnError(`PUT ${path} failed with HTTP ${res.status}`, res.status);
+      throw await failure(`PUT ${path}`, res);
     }
-    return text;
+    return res.text();
   }
+}
+
+// Failures carry problem details, whose "detail" says what went wrong
+async function failure(what, res) {
+  let detail = null;
+  try {
+    detail = JSON.parse(await res.text()).detail ?? null;
+  } catch {
+    // Not JSON, so no detail to add
+  }
+  return new SwitcheOnError(`${what} failed with HTTP ${res.status}${detail ? `: ${detail}` : ""}`, res.status);
 }
 
 /**

@@ -126,6 +126,31 @@ with no boxes, so add them from their QR codes.
 The token, the secret and the password are credentials. The `userIdBin` is not: it is
 readable inside every token, so never rely on it being unknown.
 
+## Errors
+
+A failed call answers with a status saying whose problem it is, and a
+[problem details](https://www.rfc-editor.org/rfc/rfc9457) body saying what went wrong:
+
+```json
+{
+  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.4",
+  "title": "Forbidden",
+  "status": 403,
+  "detail": "This box isn't on this account."
+}
+```
+
+| Status | Meaning | What to do |
+|---|---|---|
+| `400` | The request is wrong: a missing or malformed field | Fix the request |
+| `401` | The credentials weren't accepted: a wrong secret, an expired token, or an account id the server doesn't have | Log in again |
+| `403` | The credentials are fine, but this account can't do that, such as using a box that isn't on it | Don't retry |
+| `404` | What the request names doesn't exist | Don't retry |
+| `409` | It conflicts with something already there | Refresh, then decide |
+| `500` | The server failed. The request may be fine | Retry later |
+
+`detail` is written for a person to read. Branch on the status, not on the text.
+
 ## Endpoints
 
 All endpoints are under `https://www.switcheon.com`.
@@ -186,7 +211,14 @@ The response has more fields than shown. These are the ones that matter for cont
 | `temp` | Temperature in the unit the box is set to; see `celcius` |
 | `channelsExclusive` | Bitmask of channels that may not be on at the same time |
 
-**A rejected token returns `404`, not `401`.** Treat `404` from this call as "log in again".
+| Response | Meaning |
+|---|---|
+| `200` | The account, as above |
+| `404` | No account has this id, or the credentials were rejected. `detail` says which. Log in again |
+| `500` | The server failed. Retry later |
+
+**This call answers a rejected token with `404` where others answer `401`.** The phone app
+relies on it, so it stays that way.
 
 ### Add a box
 
@@ -207,10 +239,10 @@ This is the same thing the app does when you scan a box, with the same consequen
 
 | Response | Meaning |
 |---|---|
-| `200` | Added. The body is a message for the user, which may be empty |
+| `200` | Added, or already on this account, or can't be added because it's exclusive. The body is a message for the user, which may be empty |
 | `401` | The credentials were rejected |
 | `404` | No box has that id |
-| `400` | Anything else, including a box that is already on this account |
+| `409` | The same box was being added to this account at the same moment. Refresh to see it |
 
 ### Switch channels
 
@@ -234,8 +266,8 @@ every channel off.
 | Response | Meaning |
 |---|---|
 | `200` with body `Success` | The request is queued. It has not been applied yet |
-| `500` | The credentials were rejected, or the box isn't on this account |
-| `400` | The request couldn't be processed |
+| `401` | The credentials were rejected |
+| `403` | The box isn't on this account |
 
 A `200` means the server accepted the request, not that the box has switched. The box
 picks it up on its next exchange with the server. When it does, `currentStatus` changes
@@ -347,9 +379,7 @@ from in 30 seconds, even while it is sending you updates.
 - **ICCIDs lose precision in JavaScript.** They are 20 digit JSON numbers, past what a
   JavaScript number holds exactly. The JavaScript client turns `iccid` into a string
   before parsing. IMEIs fit.
-- **Wrong credentials look different on each call.** Login returns `401`, `GET /api/User`
-  returns `404`, `PUT /api/BoxUser` returns `401`, and `PUT /api/req` returns `500`.
-- **Adding a box that is already on the account returns `400`.**
+- **Adding a box that is already on the account returns `200`,** with a message saying so.
 - **The API is rate limited** at 100 requests a second per address, with a burst of 20.
   There is no need to poll quickly: the live connection tells you when anything changes.
 - **Browsers are limited to SwitcheOn's own origins** by CORS. Call the API from a server

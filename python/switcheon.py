@@ -138,7 +138,7 @@ class SwitcheOnClient:
         if res.status_code == 401:
             raise SwitcheOnError("The email or password was not accepted", 401)
         if not res.ok:
-            raise SwitcheOnError(f"Login failed with HTTP {res.status_code}", res.status_code)
+            raise _failure("Login", res)
 
         body = res.json()
         self._email, self._password = email, password
@@ -153,11 +153,8 @@ class SwitcheOnClient:
             params={"UserIdBin": self._require_user(), "UserSecret": self._secret()},
             timeout=30,
         )
-        # A rejected token comes back as 404, not 401
-        if res.status_code == 404:
-            raise SwitcheOnError("The account was not found or the token was rejected", 404)
         if not res.ok:
-            raise SwitcheOnError(f"GET /api/User failed with HTTP {res.status_code}", res.status_code)
+            raise _failure("GET /api/User", res)
         return res.json()
 
     def add_box(self, qr_or_box_id: str) -> str:
@@ -277,8 +274,18 @@ class SwitcheOnClient:
         body = {"userIdBin": self._require_user(), "userSecret": self._secret(), **fields}
         res = self.session.put(f"{self.base_url}{path}", json=body, timeout=30)
         if not res.ok:
-            raise SwitcheOnError(f"PUT {path} failed with HTTP {res.status_code}", res.status_code)
+            raise _failure(f"PUT {path}", res)
         return res.text
+
+
+def _failure(what: str, res: requests.Response) -> SwitcheOnError:
+    # Failures carry problem details, whose "detail" says what went wrong
+    try:
+        detail = res.json().get("detail")
+    except ValueError:
+        detail = None
+    suffix = f": {detail}" if detail else ""
+    return SwitcheOnError(f"{what} failed with HTTP {res.status_code}{suffix}", res.status_code)
 
 
 def _token_expiry(token: str) -> float:
