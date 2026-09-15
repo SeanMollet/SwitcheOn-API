@@ -102,7 +102,8 @@ the app are the boxes you see in the API.
 ### Alternative: an account created through the API
 
 1. Generate 16 random bytes and base64 encode them. That is your `userIdBin`.
-2. Choose a long random secret.
+2. Generate a random secret of at least 32 characters, for example with
+   `openssl rand -base64 32`. Anything shorter is refused with `400`.
 3. Register both:
 
 ```sh
@@ -110,7 +111,7 @@ curl -X PUT https://www.switcheon.com/api/User \
   -H 'Content-Type: application/json' \
   -d '{
         "userIdBin": "vZYCe0jbSyq5xs3SER6Bfg==",
-        "userSecret": "a long random secret",
+        "userSecret": "q4Ld8mV2rN7xT1bK9eW3sZ6hJ0yP5cGu",
         "firstname": "Integration",
         "lastname": "Account",
         "email": "integration@example.com",
@@ -291,18 +292,17 @@ wss://www.switcheon.com/api/userhub
    `userSecret` you send to the REST calls.
 3. Listen for `updateFromServer`.
 
+If the `userIdBin` or `userSecret` is wrong, the registration is refused: the invocation
+fails with an error saying which, and the connection gets no updates.
+
 **Register again after every reconnect.** The server forgets a registration when the
 connection drops. The clients hook the reconnect event and register again.
 
-### Only one live connection per account
+### Any number of connections per account
 
-The server keeps a single live connection for each account, and the newest registration
-replaces the previous one. If your integration and the phone app are logged in as the
-same account, whichever registered last receives the updates and the other goes quiet.
-
-If you need live updates in the app and in your integration at the same time, create a
-separate account for the integration and add the boxes to it. Updates go to every
-account on a box, and each account keeps its own connection.
+An account can be connected as many times as you like: the phone app, several integrations
+logged in as the same user, or a script and a dashboard. Every registered connection gets
+every update for the account's boxes. A connection stops getting updates when it closes.
 
 ### The update message
 
@@ -360,7 +360,8 @@ may hold several messages.
 3. Receive `{}␞`. Anything with an `error` field means the handshake was refused.
 4. Register:
    `{"type":1,"invocationId":"1","target":"registerConnectionSecure","arguments":["<userIdBin>","<userSecret>"]}␞`
-5. Receive a completion for it: `{"type":3,"invocationId":"1"}␞`
+5. Receive a completion for it: `{"type":3,"invocationId":"1"}␞`. One with an `error`
+   field means the registration was refused.
 6. From then on, handle messages by `type`:
 
 | `type` | Meaning | Action |
